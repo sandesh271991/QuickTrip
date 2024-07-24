@@ -44,8 +44,17 @@ struct ContentView: View {
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding(10)
                     .onChange(of: cityName) { newValue in
-                        fetchPlaceSuggestions(query: newValue) { fetchedSuggestions in
-                            suggestions = fetchedSuggestions
+                        if !newValue.isEmpty {
+                            fetchPlaceSuggestions(query: newValue) { fetchedSuggestions in
+                                suggestions = fetchedSuggestions
+                            }
+                        } else {
+                            suggestions = []
+                        }
+                    }
+                    .onTapGesture {
+                        if cityName.isEmpty {
+                            suggestions = ["Your Location"]
                         }
                     }
                 
@@ -138,20 +147,33 @@ struct ContentView: View {
                     List(suggestions, id: \.self) { suggestion in
                         Text(suggestion)
                             .onTapGesture {
-                                cityName = suggestion
-                                fetchCityCoordinates(city: suggestion) { coordinate in
-                                    if let coordinate = coordinate {
-                                        cityCoordinate = coordinate
-                                        fetchTouristPlaces(at: coordinate) { fetchedPlaces in
+                                if suggestion == "Your Location" {
+                                    cityName = "Your Location"
+                                    if let currentLocation = userLocation {
+                                        cityCoordinate = currentLocation
+                                        fetchTouristPlaces(at: currentLocation) { fetchedPlaces in
                                             places = fetchedPlaces
                                             updatePlaceNumbersAndRoute()
                                             showMapView = true
-                                            suggestions = [] // Clear suggestions after selection
+                                            suggestions = []
                                         }
-                                    } else {
-                                        print("Failed to get coordinates for city: \(suggestion)")
-                                        cityCoordinate = nil
-                                        showMapView = false
+                                    }
+                                } else {
+                                    cityName = suggestion
+                                    fetchCityCoordinates(city: suggestion) { coordinate in
+                                        if let coordinate = coordinate {
+                                            cityCoordinate = coordinate
+                                            fetchTouristPlaces(at: coordinate) { fetchedPlaces in
+                                                places = fetchedPlaces
+                                                updatePlaceNumbersAndRoute()
+                                                showMapView = true
+                                                suggestions = [] // Clear suggestions after selection
+                                            }
+                                        } else {
+                                            print("Failed to get coordinates for city: \(suggestion)")
+                                            cityCoordinate = nil
+                                            showMapView = false
+                                        }
                                     }
                                 }
                             }
@@ -854,7 +876,7 @@ func fetchPlacePhoto(photoReference: String, completion: @escaping (UIImage?) ->
 func fetchTouristPlaces(at coordinate: CLLocationCoordinate2D, completion: @escaping ([Place]) -> Void) {
     let apiKey = "AIzaSyCLt4IgoURwoqW1DgIAUklDvHAZDJaR3bo"
     let location = "\(coordinate.latitude),\(coordinate.longitude)"
-    let radius = 500
+    let radius = 2000
     let type = "tourist_attraction"
     
     let urlString = "https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=\(location)&radius=\(radius)&type=\(type)&key=\(apiKey)"
