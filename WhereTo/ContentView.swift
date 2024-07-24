@@ -31,7 +31,8 @@ struct ContentView: View {
     @State private var totalDistance: CLLocationDistance = 0
     @State private var totalTime: TimeInterval = 0
     @State private var selectedTransportType: TransportType = .automobile
-    @State private var useCurrentLocation = false
+    @State private var useCurrentLocationAsStart = false
+    @State private var useCurrentLocationAsEnd = false
     @State private var showingNavigationOptions = false
     @State private var selectedPlaceCoordinate: CLLocationCoordinate2D?
     @State private var isMapViewShown = true
@@ -42,22 +43,36 @@ struct ContentView: View {
                 TextField("Enter place name", text: $cityName)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding(10)
-                    .onChange(of: cityName) {
-                        fetchPlaceSuggestions(query: cityName) { fetchedSuggestions in
+                    .onChange(of: cityName) { newValue in
+                        fetchPlaceSuggestions(query: newValue) { fetchedSuggestions in
                             suggestions = fetchedSuggestions
                         }
                     }
                 
                 HStack {
                     Button(action: {
-                        useCurrentLocation.toggle()
+                        useCurrentLocationAsStart.toggle()
                         updatePlaceNumbersAndRoute()
                     }) {
-                        Image(systemName: useCurrentLocation ? "checkmark.square" : "square")
+                        Image(systemName: useCurrentLocationAsStart ? "checkmark.square" : "square")
                             .foregroundColor(.blue)
                             .imageScale(.large)
                     }
                     Text("Use Current Location as Start Point")
+                    Spacer()
+                }
+                .padding()
+                
+                HStack {
+                    Button(action: {
+                        useCurrentLocationAsEnd.toggle()
+                        updatePlaceNumbersAndRoute()
+                    }) {
+                        Image(systemName: useCurrentLocationAsEnd ? "checkmark.square" : "square")
+                            .foregroundColor(.blue)
+                            .imageScale(.large)
+                    }
+                    Text("Use Current Location as End Point")
                     Spacer()
                 }
                 .padding()
@@ -69,7 +84,7 @@ struct ContentView: View {
                 }
                 .pickerStyle(SegmentedPickerStyle())
                 .padding()
-                .onChange(of: selectedTransportType) {
+                .onChange(of: selectedTransportType) { _ in
                     updatePlaceNumbersAndRoute()
                 }
                 
@@ -91,7 +106,7 @@ struct ContentView: View {
                 
                 if isMapViewShown {
                     if showMapView {
-                        MapView(places: $places, totalDistance: $totalDistance, totalTime: $totalTime, transportType: $selectedTransportType, useCurrentLocation: $useCurrentLocation, cityCoordinate: $cityCoordinate)
+                        MapView(places: $places, totalDistance: $totalDistance, totalTime: $totalTime, transportType: $selectedTransportType, useCurrentLocationAsStart: $useCurrentLocationAsStart, useCurrentLocationAsEnd: $useCurrentLocationAsEnd, cityCoordinate: $cityCoordinate)
                             .edgesIgnoringSafeArea(.bottom)
                     }
                 } else {
@@ -104,126 +119,18 @@ struct ContentView: View {
                     ScrollView {
                         VStack {
                             ForEach(places.indices, id: \.self) { index in
-                                HStack(alignment: .center) {
-                                    VStack(alignment: .center, spacing: 0) {
-                                        Spacer()
-                                        
-                                        Button(action: {
-                                            places[index].isSelected.toggle()
-                                            updatePlaceNumbersAndRoute()
-                                        }) {
-                                            Image(systemName: places[index].isSelected ? "checkmark.square" : "square")
-                                                .resizable()
-                                                .frame(width: 20, height: 20)
-                                                .foregroundColor(.blue)
-                                        }
-                                        Spacer()
-                                    }
-                                    .padding(.trailing, 5)
-                                    
-                                    VStack {
-                                        Circle()
-                                            .fill(Color.blue)
-                                            .frame(width: 20, height: 20)
-                                            .overlay(Text("\(index + 1)").foregroundColor(.white))
-                                        
-                                        Rectangle()
-                                            .fill(Color.blue)
-                                            .frame(width: 2)
-                                            .layoutPriority(-1) // Ensure it doesn't affect the height of the VStack
-                                            .background(
-                                                GeometryReader { geometry in
-                                                    Color.clear
-                                                        .frame(width: 2, height: geometry.size.height)
-                                                }
-                                            )
-                                    }
-                                    .padding(.trailing, 5)
-
-                                    
-                                    VStack(alignment: .leading) {
-                                        Text(places[index].name)
-                                            .padding(.bottom, 10)
-                                        if let photo = places[index].photo {
-                                            ScrollView(.horizontal) {
-                                                HStack {
-                                                    Image(uiImage: photo)
-                                                        .resizable()
-                                                        .frame(width: 50, height: 50)
-                                                        .cornerRadius(5)
-                                                }
-                                            }
-                                        } else if let photoReference = places[index].photoReference {
-                                            ProgressView()
-                                                .frame(width: 50, height: 50)
-                                                .onAppear {
-                                                    fetchPlacePhoto(photoReference: photoReference) { image in
-                                                        if let image = image {
-                                                            DispatchQueue.main.async {
-                                                                places[index].photo = image
-                                                            }
-                                                        } else {
-                                                            print("Failed to fetch photo for place: \(places[index].name)")
-                                                        }
-                                                    }
-                                                }
-                                        }
-                                        // Place details
-                                        Text("Address: \(places[index].address ?? "N/A")")
-                                            .padding(.top, 5)
-                                        Text("Rating: \(places[index].rating ?? 0)/5")
-                                            .padding(.top, 5)
-                                        if let reviews = places[index].reviews {
-                                            ForEach(reviews.prefix(3), id: \.authorName) { review in
-                                                VStack(alignment: .leading) {
-                                                    Text("Review by \(review.authorName):")
-                                                        .font(.subheadline)
-                                                        .fontWeight(.bold)
-                                                    Text(review.text)
-                                                        .font(.subheadline)
-                                                        .italic()
-                                                }
-                                                .padding(.top, 5)
-                                            }
-                                        }
-                                        // Opening hours
-                                        if let openingHours = places[index].openingHours {
-                                            Text("Opening Hours:")
-                                                .font(.subheadline)
-                                                .fontWeight(.bold)
-                                                .padding(.top, 5)
-                                            ForEach(openingHours.weekday_text ?? [""], id: \.self) { dayText in
-                                                Text(dayText)
-                                                    .font(.subheadline)
-                                            }
-                                        }
-                                        Spacer()
-                                        Button(action: {
-                                            selectedPlaceCoordinate = places[index].coordinate
-                                            showingNavigationOptions = true
-                                        }) {
-                                            HStack {
-                                                Text("Navigate")
-                                                Image(systemName: "arrow.right.circle")
-                                            }
-                                        }
-                                        .disabled(places[index].isSelected ? false : true)
-                                        Divider()
-                                    }
-                                    Spacer()
-                                }
-                                .padding(.vertical, 1)
-                                .padding(.horizontal, 10)
-                                .background(places[index].isSelected ? Color.black : Color(red: 0.95, green: 0.95, blue: 0.95))
+                                PlaceRow(
+                                    place: $places[index],
+                                    updateRoute: updatePlaceNumbersAndRoute,
+                                    selectedPlaceCoordinate: $selectedPlaceCoordinate,
+                                    showingNavigationOptions: $showingNavigationOptions
+                                )
                             }
                         }
-                        .background(Color.black)
                     }
-                    .background(Color.black)
                 }
                 Spacer()
             }
-            .background(Color.black)
             .zIndex(0)
             
             if suggestions.count > 0 {
@@ -270,7 +177,7 @@ struct ContentView: View {
                 .cancel()
             ])
         }
-        .onChange(of: places) {
+        .onChange(of: places) { _ in
             updatePlaceNumbersAndRoute()
         }
     }
@@ -306,64 +213,18 @@ struct ContentView: View {
         
         let group = DispatchGroup()
         
-        if useCurrentLocation, let currentLocation = userLocation {
-            let source = currentLocation
-            let destination = selectedPlaces.first!.coordinate
-            
-            let request = MKDirections.Request()
-            request.source = MKMapItem(placemark: MKPlacemark(coordinate: source))
-            request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-            request.transportType = selectedTransportType.mkTransportType
-            
-            let directions = MKDirections(request: request)
-            group.enter()
-            directions.calculate { response, error in
-                if let error = error as NSError? {
-                    print("Error calculating directions: \(error.localizedDescription)")
-                    if let underlyingError = error.userInfo[NSUnderlyingErrorKey] as? NSError {
-                        print("Underlying error: \(underlyingError.localizedDescription)")
-                    }
-                    print("Error code: \(error.code)")
-                    print("Error domain: \(error.domain)")
-                } else if let route = response?.routes.first {
-                    totalTime += route.expectedTravelTime
-                    totalDistance += route.distance
-                    print("Route found: \(route)")
-                } else {
-                    print("No routes found")
-                }
-                group.leave()
-            }
+        if useCurrentLocationAsStart, let currentLocation = userLocation {
+            calculateRoute(group: group, from: currentLocation, to: selectedPlaces.first!.coordinate)
+        } else if let startCoordinate = cityCoordinate {
+            calculateRoute(group: group, from: startCoordinate, to: selectedPlaces.first!.coordinate)
         }
         
         for i in 0..<(selectedPlaces.count - 1) {
-            let source = selectedPlaces[i].coordinate
-            let destination = selectedPlaces[i + 1].coordinate
-            
-            let request = MKDirections.Request()
-            request.source = MKMapItem(placemark: MKPlacemark(coordinate: source))
-            request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-            request.transportType = selectedTransportType.mkTransportType
-            
-            let directions = MKDirections(request: request)
-            group.enter()
-            directions.calculate { response, error in
-                if let error = error as NSError? {
-                    print("Error calculating directions: \(error.localizedDescription)")
-                    if let underlyingError = error.userInfo[NSUnderlyingErrorKey] as? NSError {
-                        print("Underlying error: \(underlyingError.localizedDescription)")
-                    }
-                    print("Error code: \(error.code)")
-                    print("Error domain: \(error.domain)")
-                } else if let route = response?.routes.first {
-                    totalTime += route.expectedTravelTime
-                    totalDistance += route.distance
-                    print("Route found: \(route)")
-                } else {
-                    print("No routes found")
-                }
-                group.leave()
-            }
+            calculateRoute(group: group, from: selectedPlaces[i].coordinate, to: selectedPlaces[i + 1].coordinate)
+        }
+        
+        if useCurrentLocationAsEnd, let currentLocation = userLocation {
+            calculateRoute(group: group, from: selectedPlaces.last!.coordinate, to: currentLocation)
         }
         
         group.notify(queue: .main) {
@@ -372,6 +233,22 @@ struct ContentView: View {
         }
     }
     
+    private func calculateRoute(group: DispatchGroup, from source: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) {
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: source))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+        request.transportType = selectedTransportType.mkTransportType
+        
+        let directions = MKDirections(request: request)
+        group.enter()
+        directions.calculate { response, error in
+            if let route = response?.routes.first {
+                self.totalTime += route.expectedTravelTime
+                self.totalDistance += route.distance
+            }
+            group.leave()
+        }
+    }
     
     private func startNavigation(to destinationCoordinate: CLLocationCoordinate2D?, useGoogleMaps: Bool) {
         guard let destinationCoordinate = destinationCoordinate else {
@@ -402,8 +279,124 @@ struct ContentView: View {
     }
     
     var userLocation: CLLocationCoordinate2D? {
-        guard useCurrentLocation else { return nil }
         return CLLocationManager().location?.coordinate
+    }
+}
+
+struct PlaceRow: View {
+    @Binding var place: Place
+    var updateRoute: () -> Void
+    @Binding var selectedPlaceCoordinate: CLLocationCoordinate2D?
+    @Binding var showingNavigationOptions: Bool
+    
+    var body: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .center, spacing: 0) {
+                Spacer()
+                Button(action: {
+                    place.isSelected.toggle()
+                    updateRoute()
+                }) {
+                    Image(systemName: place.isSelected ? "checkmark.square" : "square")
+                        .resizable()
+                        .frame(width: 20, height: 20)
+                        .foregroundColor(.blue)
+                }
+                Spacer()
+            }
+            .padding(.trailing, 5)
+            
+            VStack {
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 20, height: 20)
+                    .overlay(Text("\(place.number)").foregroundColor(.white))
+                
+                Rectangle()
+                    .fill(Color.blue)
+                    .frame(width: 2)
+                    .layoutPriority(-1)
+                    .background(
+                        GeometryReader { geometry in
+                            Color.clear
+                                .frame(width: 2, height: geometry.size.height)
+                        }
+                    )
+            }
+            .padding(.trailing, 5)
+            
+            VStack(alignment: .leading) {
+                Text(place.name)
+                    .padding(.bottom, 10)
+                if let photo = place.photo {
+                    ScrollView(.horizontal) {
+                        HStack {
+                            Image(uiImage: photo)
+                                .resizable()
+                                .frame(width: 50, height: 50)
+                                .cornerRadius(5)
+                        }
+                    }
+                } else if let photoReference = place.photoReference {
+                    ProgressView()
+                        .frame(width: 50, height: 50)
+                        .onAppear {
+                            fetchPlacePhoto(photoReference: photoReference) { image in
+                                if let image = image {
+                                    DispatchQueue.main.async {
+                                        place.photo = image
+                                    }
+                                } else {
+                                    print("Failed to fetch photo for place: \(place.name)")
+                                }
+                            }
+                        }
+                }
+                Text("Address: \(place.address ?? "N/A")")
+                    .padding(.top, 5)
+                Text("Rating: \(place.rating ?? 0)/5")
+                    .padding(.top, 5)
+                if let reviews = place.reviews {
+                    ForEach(reviews.prefix(3), id: \.authorName) { review in
+                        VStack(alignment: .leading) {
+                            Text("Review by \(review.authorName):")
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                            Text(review.text)
+                                .font(.subheadline)
+                                .italic()
+                        }
+                        .padding(.top, 5)
+                    }
+                }
+                if let openingHours = place.openingHours {
+                    Text("Opening Hours:")
+                        .font(.subheadline)
+                        .fontWeight(.bold)
+                        .padding(.top, 5)
+                    ForEach(openingHours.weekday_text ?? [""], id: \.self) { dayText in
+                        Text(dayText)
+                            .font(.subheadline)
+                    }
+                }
+                Spacer()
+                Button(action: {
+                    selectedPlaceCoordinate = place.coordinate
+                    showingNavigationOptions = true
+                }) {
+                    HStack {
+                        Text("Navigate")
+                        Image(systemName: "arrow.right.circle")
+                    }
+                }
+                .disabled(place.isSelected ? false : true)
+                Divider()
+            }
+            Spacer()
+        }
+        .padding(.vertical, 1)
+        .padding(.horizontal, 10)
+        .background(place.isSelected ? Color.black : Color(red: 0.95, green: 0.95, blue: 0.95))
     }
 }
 
@@ -451,7 +444,8 @@ struct MapView: UIViewRepresentable {
     @Binding var totalDistance: CLLocationDistance
     @Binding var totalTime: TimeInterval
     @Binding var transportType: TransportType
-    @Binding var useCurrentLocation: Bool
+    @Binding var useCurrentLocationAsStart: Bool
+    @Binding var useCurrentLocationAsEnd: Bool
     @Binding var cityCoordinate: CLLocationCoordinate2D?
     @State private var locationManager = CLLocationManager()
     @State private var userLocation: CLLocationCoordinate2D?
@@ -459,7 +453,6 @@ struct MapView: UIViewRepresentable {
     
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
-      //  self.mapView = mapView // Assign map view instance
         mapView.delegate = context.coordinator
         
         locationManager.delegate = context.coordinator
@@ -470,8 +463,7 @@ struct MapView: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: MKMapView, context: Context) {
-        if useCurrentLocation, let userLocation = userLocation {
-            print("Updating UI View with user location: \(userLocation.latitude), \(userLocation.longitude)")
+        if useCurrentLocationAsStart, let userLocation = userLocation {
             uiView.setCenter(userLocation, animated: true)
             cityCoordinate = userLocation
         } else if let cityCoordinate = cityCoordinate {
@@ -486,7 +478,7 @@ struct MapView: UIViewRepresentable {
     
     func addAnnotations(mapView: MKMapView) {
         mapView.removeAnnotations(mapView.annotations)
-        if useCurrentLocation, let userLocation = userLocation {
+        if useCurrentLocationAsStart, let userLocation = userLocation {
             let currentLocationAnnotation = MKPointAnnotation()
             currentLocationAnnotation.coordinate = userLocation
             currentLocationAnnotation.title = "Current Location"
@@ -503,8 +495,11 @@ struct MapView: UIViewRepresentable {
         let selectedPlaces = places.filter { $0.isSelected }
         var coordinates = selectedPlaces.map { $0.coordinate }
         
-        if useCurrentLocation, let userLocation = userLocation {
+        if useCurrentLocationAsStart, let userLocation = userLocation {
             coordinates.insert(userLocation, at: 0)
+        }
+        if useCurrentLocationAsEnd, let userLocation = userLocation {
+            coordinates.append(userLocation)
         }
         
         let polyline = MKPolyline(coordinates: coordinates, count: coordinates.count)
@@ -541,8 +536,11 @@ struct MapView: UIViewRepresentable {
         let selectedPlaces = places.filter { $0.isSelected }
         var coordinates = selectedPlaces.map { $0.coordinate }
         
-        if useCurrentLocation, let userLocation = userLocation {
+        if useCurrentLocationAsStart, let userLocation = userLocation {
             coordinates.insert(userLocation, at: 0)
+        }
+        if useCurrentLocationAsEnd, let userLocation = userLocation {
+            coordinates.append(userLocation)
         }
         
         if !coordinates.isEmpty {
