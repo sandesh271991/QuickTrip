@@ -1,6 +1,3 @@
-//Commit checker 
-
-
 import SwiftUI
 import MapKit
 import CoreLocation
@@ -23,6 +20,45 @@ enum TransportType: Int, CaseIterable {
         case .transit: return .transit
         }
     }
+    
+    var googleTransportType: String {
+        switch self {
+        case .automobile: return "driving"
+        case .walking: return "walking"
+        case .transit: return "transit"
+        }
+    }
+}
+
+struct SeasonBoxView: View {
+    let title: String
+    let info: String
+    
+    var body: some View {
+        
+        // create hstack
+        
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.headline)
+                .padding(.bottom, 2)
+                .foregroundColor(.red)
+            Text(info)
+                .font(.subheadline)
+                .foregroundColor(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding()
+        .background(Color.white)
+        .cornerRadius(10)
+        .shadow(radius: 5)
+    }
+}
+
+struct SeasonInfo: Decodable {
+    let peakSeason: String
+    let shoulderSeason: String
+    let offSeason: String
 }
 
 struct ContentView: View {
@@ -39,171 +75,249 @@ struct ContentView: View {
     @State private var showingNavigationOptions = false
     @State private var selectedPlaceCoordinate: CLLocationCoordinate2D?
     @State private var isMapViewShown = true
+    @State private var seasonInformation: SeasonInfo?
+    @State private var searchRadius: Double = 10.0 // New state for search radius
     
     var body: some View {
-        ZStack {
-            VStack {
-                TextField("Enter place name", text: $cityName)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .padding(10)
-                    .onChange(of: cityName) { newValue in
-                        if !newValue.isEmpty {
-                            fetchPlaceSuggestions(query: newValue) { fetchedSuggestions in
-                                suggestions = fetchedSuggestions
+        ScrollView {
+            ZStack {
+                VStack {
+                    TextField("Enter place name", text: $cityName)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .padding(10)
+                        .onChange(of: cityName) { newValue in
+                            if !newValue.isEmpty {
+                                fetchPlaceSuggestions(query: newValue) { fetchedSuggestions in
+                                    suggestions = fetchedSuggestions
+                                }
+                            } else {
+                                suggestions = []
                             }
-                        } else {
-                            suggestions = []
                         }
-                    }
-                    .onTapGesture {
-                        if cityName.isEmpty {
-                            suggestions = ["Your Location"]
+                        .onTapGesture {
+                            if cityName.isEmpty {
+                                suggestions = ["Your Location"]
+                            }
                         }
-                    }
-                
-                HStack {
-                    Button(action: {
-                        useCurrentLocationAsStart.toggle()
-                        updatePlaceNumbersAndRoute()
-                    }) {
-                        Image(systemName: useCurrentLocationAsStart ? "checkmark.square" : "square")
-                            .foregroundColor(.blue)
-                            .imageScale(.large)
-                    }
-                    Text("Use Current Location as Start Point")
-                    Spacer()
-                }
-                .padding()
-                
-                HStack {
-                    Button(action: {
-                        useCurrentLocationAsEnd.toggle()
-                        updatePlaceNumbersAndRoute()
-                    }) {
-                        Image(systemName: useCurrentLocationAsEnd ? "checkmark.square" : "square")
-                            .foregroundColor(.blue)
-                            .imageScale(.large)
-                    }
-                    Text("Use Current Location as End Point")
-                    Spacer()
-                }
-                .padding()
-                
-                Picker("Transport Type", selection: $selectedTransportType) {
-                    ForEach(TransportType.allCases, id: \.self) { type in
-                        type.icon.tag(type)
-                    }
-                }
-                .pickerStyle(SegmentedPickerStyle())
-                .padding()
-                .onChange(of: selectedTransportType) { _ in
-                    updatePlaceNumbersAndRoute()
-                }
-                
-                if totalTime > 0 {
+                    
                     HStack {
-                        Text("Total Time: \(formattedTime(totalTime))")
-                            .padding()
-                        
-                        Spacer()
                         Button(action: {
-                            isMapViewShown.toggle()
+                            useCurrentLocationAsStart.toggle()
+                            updatePlaceNumbersAndRoute()
                         }) {
-                            Image(systemName: isMapViewShown ? "list.bullet" : "map")
+                            Image(systemName: useCurrentLocationAsStart ? "checkmark.square" : "square")
                                 .foregroundColor(.blue)
                                 .imageScale(.large)
                         }
-                    }
-                }
-                
-                if isMapViewShown {
-                    if showMapView {
-                        MapView(places: $places, totalDistance: $totalDistance, totalTime: $totalTime, transportType: $selectedTransportType, useCurrentLocationAsStart: $useCurrentLocationAsStart, useCurrentLocationAsEnd: $useCurrentLocationAsEnd, cityCoordinate: $cityCoordinate)
-                            .edgesIgnoringSafeArea(.bottom)
-                    }
-                } else {
-                    HStack {
-                        Text("Places to visit")
-                            .padding(.vertical, 1)
-                            .padding(.horizontal, 10)
+                        Text("Use Current Location as Start Point")
                         Spacer()
                     }
-                    ScrollView {
-                        VStack {
-                            ForEach(places.indices, id: \.self) { index in
-                                PlaceRow(
-                                    place: $places[index],
-                                    updateRoute: updatePlaceNumbersAndRoute,
-                                    selectedPlaceCoordinate: $selectedPlaceCoordinate,
-                                    showingNavigationOptions: $showingNavigationOptions
-                                )
-                            }
+                    
+                    HStack {
+                        Button(action: {
+                            useCurrentLocationAsEnd.toggle()
+                            updatePlaceNumbersAndRoute()
+                        }) {
+                            Image(systemName: useCurrentLocationAsEnd ? "checkmark.square" : "square")
+                                .foregroundColor(.blue)
+                                .imageScale(.large)
+                        }
+                        Text("Use Current Location as End Point")
+                        Spacer()
+                    }
+                    
+                    Picker("Transport Type", selection: $selectedTransportType) {
+                        ForEach(TransportType.allCases, id: \.self) { type in
+                            type.icon.tag(type)
                         }
                     }
-                }
-                Spacer()
-            }
-            .zIndex(0)
-            
-            if suggestions.count > 0 {
-                VStack {
-                    List(suggestions, id: \.self) { suggestion in
-                        Text(suggestion)
-                            .onTapGesture {
-                                if suggestion == "Your Location" {
-                                    cityName = "Your Location"
-                                    if let currentLocation = userLocation {
-                                        cityCoordinate = currentLocation
-                                        fetchTouristPlaces(at: currentLocation) { fetchedPlaces in
-                                            places = fetchedPlaces
-                                            updatePlaceNumbersAndRoute()
-                                            showMapView = true
-                                            suggestions = []
-                                        }
-                                    }
-                                } else {
-                                    cityName = suggestion
-                                    fetchCityCoordinates(city: suggestion) { coordinate in
-                                        if let coordinate = coordinate {
-                                            cityCoordinate = coordinate
-                                            fetchTouristPlaces(at: coordinate) { fetchedPlaces in
-                                                places = fetchedPlaces
-                                                updatePlaceNumbersAndRoute()
-                                                showMapView = true
-                                                suggestions = [] // Clear suggestions after selection
-                                            }
-                                        } else {
-                                            print("Failed to get coordinates for city: \(suggestion)")
-                                            cityCoordinate = nil
-                                            showMapView = false
-                                        }
+                    .pickerStyle(SegmentedPickerStyle())
+                    .padding()
+                    .onChange(of: selectedTransportType) { _ in
+                        if selectedTransportType == .transit {
+                            updatePublicTransportRoute()
+                        } else {
+                            updatePlaceNumbersAndRoute()
+                        }
+                    }
+                    
+                    // Slider for search radius
+                    VStack {
+                        Text("Search Radius: \(Int(searchRadius)) km")
+                        Slider(value: $searchRadius, in: 1...100, step: 1)
+                            .padding()
+                            .onChange(of: searchRadius) { newRadius in
+                                if let coordinate = cityCoordinate {
+                                    fetchTouristPlaces(at: coordinate, radius: newRadius) { fetchedPlaces in
+                                        places = fetchedPlaces
+                                        updatePlaceNumbersAndRoute()
                                     }
                                 }
                             }
                     }
-                    .background(Color.white)
-                    .cornerRadius(10)
-                    .shadow(radius: 5)
-                    .frame(maxHeight: 300)
-                    .padding(.top, 50)
+                    
+                    if totalTime > 0 {
+                        HStack {
+                            Text("Total Time: \(formattedTime(totalTime))")
+                                .padding()
+                            
+                            Spacer()
+                            Button(action: {
+                                isMapViewShown.toggle()
+                            }) {
+                                Image(systemName: isMapViewShown ? "list.bullet" : "map")
+                                    .foregroundColor(.blue)
+                                    .imageScale(.large)
+                            }
+                        }
+                    }
+                    
+                    if isMapViewShown {
+                        if showMapView {
+                            MapView(places: $places, totalDistance: $totalDistance, totalTime: $totalTime, transportType: $selectedTransportType, useCurrentLocationAsStart: $useCurrentLocationAsStart, useCurrentLocationAsEnd: $useCurrentLocationAsEnd, cityCoordinate: $cityCoordinate)
+                                .edgesIgnoringSafeArea(.bottom)
+                                .frame(height: 400)
+                        }
+                    } else {
+                        HStack {
+                            // AI-assisted function generation
+                            // create test for name
+                            Text("Places to visit")
+                                .padding(.vertical, 1)
+                                .padding(.horizontal, 10)
+                            Spacer()
+                        }
+                        ScrollView {
+                            VStack {
+                                ForEach(places.indices, id: \.self) { index in
+                                    PlaceRow(
+                                        place: $places[index],
+                                        updateRoute: updatePlaceNumbersAndRoute,
+                                        selectedPlaceCoordinate: $selectedPlaceCoordinate,
+                                        showingNavigationOptions: $showingNavigationOptions
+                                    )
+                                }
+                            }
+                        }
+                        .frame(height: 400)
+                    }
+                    
                     Spacer()
+                    
+                    if let seasonInformation = seasonInformation {
+                        HStack(alignment: .top, spacing: 10) {
+                            SeasonBoxView(title: "Peak Season", info: seasonInformation.peakSeason)
+                            SeasonBoxView(title: "Shoulder Season", info: seasonInformation.shoulderSeason)
+                            SeasonBoxView(title: "Off Season", info: seasonInformation.offSeason)
+                        }
+                        .padding()
+                    }
                 }
-                .zIndex(1)
+                .zIndex(0)
+                
+                if suggestions.count > 0 {
+                    VStack {
+                        List(suggestions, id: \.self) { suggestion in
+                            Text(suggestion)
+                                .onTapGesture {
+                                    if suggestion == "Your Location" {
+                                        cityName = "Your Location"
+                                        if let currentLocation = userLocation {
+                                            cityCoordinate = currentLocation
+                                            fetchTouristPlaces(at: currentLocation, radius: searchRadius) { fetchedPlaces in
+                                                places = fetchedPlaces
+                                                updatePlaceNumbersAndRoute()
+                                                showMapView = true
+                                                suggestions = []
+                                            }
+                                            fetchSeasonInfo(for: "Your Location") { info in
+                                                if let info = info {
+                                                    DispatchQueue.main.async {
+                                                        self.seasonInformation = info
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        cityName = suggestion
+                                        fetchCityCoordinates(city: suggestion) { coordinate in
+                                            if let coordinate = coordinate {
+                                                cityCoordinate = coordinate
+                                                fetchTouristPlaces(at: coordinate, radius: searchRadius) { fetchedPlaces in
+                                                    places = fetchedPlaces
+                                                    updatePlaceNumbersAndRoute()
+                                                    showMapView = true
+                                                    suggestions = [] // Clear suggestions after selection
+                                                }
+                                                fetchSeasonInfo(for: suggestion) { info in
+                                                    if let info = info {
+                                                        DispatchQueue.main.async {
+                                                            self.seasonInformation = info
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                print("Failed to get coordinates for city: \(suggestion)")
+                                                cityCoordinate = nil
+                                                showMapView = false
+                                            }
+                                        }
+                                    }
+                                }
+                        }
+                        .background(Color.white)
+                        .cornerRadius(10)
+                        .shadow(radius: 5)
+                        .frame(maxHeight: 300)
+                        .padding(.top, 50)
+                        Spacer()
+                    }
+                    .zIndex(1)
+                }
+            }
+            .actionSheet(isPresented: $showingNavigationOptions) {
+                ActionSheet(title: Text("Choose Navigation App"), buttons: [
+                    .default(Text("Apple Maps")) {
+                        startNavigation(to: selectedPlaceCoordinate, useGoogleMaps: false)
+                    },
+                    .default(Text("Google Maps")) {
+                        startNavigation(to: selectedPlaceCoordinate, useGoogleMaps: true)
+                    },
+                    .cancel()
+                ])
+            }
+            .onChange(of: places) { _ in
+                updatePlaceNumbersAndRoute()
             }
         }
-        .actionSheet(isPresented: $showingNavigationOptions) {
-            ActionSheet(title: Text("Choose Navigation App"), buttons: [
-                .default(Text("Apple Maps")) {
-                    startNavigation(to: selectedPlaceCoordinate, useGoogleMaps: false)
-                },
-                .default(Text("Google Maps")) {
-                    startNavigation(to: selectedPlaceCoordinate, useGoogleMaps: true)
-                },
-                .cancel()
-            ])
+    }
+    
+    func updatePublicTransportRoute() {
+        totalTime = 0
+        totalDistance = 0
+        
+        let selectedPlaces = places.filter { $0.isSelected }
+        guard selectedPlaces.count > 0 else { return }
+        
+        let group = DispatchGroup()
+        
+        if useCurrentLocationAsStart, let currentLocation = userLocation {
+            calculateRoute(group: group, from: currentLocation, to: selectedPlaces.first!.coordinate, transportType: .transit)
+        } else if let startCoordinate = cityCoordinate {
+            calculateRoute(group: group, from: startCoordinate, to: selectedPlaces.first!.coordinate, transportType: .transit)
         }
-        .onChange(of: places) { _ in
-            updatePlaceNumbersAndRoute()
+        
+        for i in 0..<(selectedPlaces.count - 1) {
+            calculateRoute(group: group, from: selectedPlaces[i].coordinate, to: selectedPlaces[i + 1].coordinate, transportType: .transit)
+        }
+        
+        if useCurrentLocationAsEnd, let currentLocation = userLocation {
+            calculateRoute(group: group, from: selectedPlaces.last!.coordinate, to: currentLocation, transportType: .transit)
+        }
+        
+        group.notify(queue: .main) {
+            print("Total travel time: \(self.totalTime) seconds")
+            print("Total distance: \(self.totalDistance) meters")
         }
     }
     
@@ -239,17 +353,17 @@ struct ContentView: View {
         let group = DispatchGroup()
         
         if useCurrentLocationAsStart, let currentLocation = userLocation {
-            calculateRoute(group: group, from: currentLocation, to: selectedPlaces.first!.coordinate)
+            calculateRoute(group: group, from: currentLocation, to: selectedPlaces.first!.coordinate, transportType: selectedTransportType)
         } else if let startCoordinate = cityCoordinate {
-            calculateRoute(group: group, from: startCoordinate, to: selectedPlaces.first!.coordinate)
+            calculateRoute(group: group, from: startCoordinate, to: selectedPlaces.first!.coordinate, transportType: selectedTransportType)
         }
         
         for i in 0..<(selectedPlaces.count - 1) {
-            calculateRoute(group: group, from: selectedPlaces[i].coordinate, to: selectedPlaces[i + 1].coordinate)
+            calculateRoute(group: group, from: selectedPlaces[i].coordinate, to: selectedPlaces[i + 1].coordinate, transportType: selectedTransportType)
         }
         
         if useCurrentLocationAsEnd, let currentLocation = userLocation {
-            calculateRoute(group: group, from: selectedPlaces.last!.coordinate, to: currentLocation)
+            calculateRoute(group: group, from: selectedPlaces.last!.coordinate, to: currentLocation, transportType: selectedTransportType)
         }
         
         group.notify(queue: .main) {
@@ -258,20 +372,29 @@ struct ContentView: View {
         }
     }
     
-    private func calculateRoute(group: DispatchGroup, from source: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) {
-        let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: MKPlacemark(coordinate: source))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-        request.transportType = selectedTransportType.mkTransportType
-        
-        let directions = MKDirections(request: request)
+    private func calculateRoute(group: DispatchGroup, from source: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D, transportType: TransportType) {
         group.enter()
-        directions.calculate { response, error in
-            if let route = response?.routes.first {
-                self.totalTime += route.expectedTravelTime
-                self.totalDistance += route.distance
+        if transportType == .transit {
+            fetchPublicTransportTime(from: source, to: destination, transportType: transportType) { time in
+                if let time = time {
+                    self.totalTime += time
+                }
+                group.leave()
             }
-            group.leave()
+        } else {
+            let request = MKDirections.Request()
+            request.source = MKMapItem(placemark: MKPlacemark(coordinate: source))
+            request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+            request.transportType = transportType.mkTransportType
+            
+            let directions = MKDirections(request: request)
+            directions.calculate { response, error in
+                if let route = response?.routes.first {
+                    self.totalTime += route.expectedTravelTime
+                    self.totalDistance += route.distance
+                }
+                group.leave()
+            }
         }
     }
     
@@ -305,6 +428,96 @@ struct ContentView: View {
     
     var userLocation: CLLocationCoordinate2D? {
         return CLLocationManager().location?.coordinate
+    }
+    
+    func parseSeasonInfo(_ info: String) -> SeasonInfo {
+        // Example parsing logic. Adjust based on the actual response format.
+        let lines = info.split(separator: "\n")
+        var peakSeason = ""
+        var shoulderSeason = ""
+        var offSeason = ""
+        
+        for line in lines {
+            if line.contains("Peak Season") {
+                peakSeason = String(line.replacingOccurrences(of: "Peak Season:", with: "").trimmingCharacters(in: .whitespacesAndNewlines))
+            } else if line.contains("Shoulder Season") {
+                shoulderSeason = String(line.replacingOccurrences(of: "Shoulder Season:", with: "").trimmingCharacters(in: .whitespacesAndNewlines))
+            } else if line.contains("Off Season") {
+                offSeason = String(line.replacingOccurrences(of: "Off Season:", with: "").trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+        
+        return SeasonInfo(peakSeason: peakSeason, shoulderSeason: shoulderSeason, offSeason: offSeason)
+    }
+    
+    //gpt-4o-mini
+    func fetchSeasonInfo(for place: String, completion: @escaping (SeasonInfo?) -> Void) {
+       // let apiKey = "AOcnds82Nz6l0jtTujAwT3BlbkFJpUOnhfFuIU7cBTSxEYXZ"
+        
+        let urlString = "https://api.openai.com/v1/chat/completions"
+        guard let url = URL(string: urlString) else {
+            completion(nil)
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        
+        let prompt = """
+        Provide the peak season, shoulder season, and off-season for tourists to travel to \(place) in JSON format with keys "peakSeason", "shoulderSeason", and "offSeason".
+        """
+        let body: [String: Any] = [
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                ["role": "system", "content": "You are a helpful assistant."],
+                ["role": "user", "content": prompt]
+            ],
+            "max_tokens": 200,
+            "temperature": 0.5
+        ]
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+        } catch {
+            print("Failed to serialize request body: \(error.localizedDescription)")
+            completion(nil)
+            return
+        }
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
+                print("Network error: \(error.localizedDescription)")
+                completion(nil)
+                return
+            }
+            
+            guard let data = data else {
+                print("No data received")
+                completion(nil)
+                return
+            }
+            
+            do {
+                if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                   let choices = json["choices"] as? [[String: Any]],
+                   let message = choices.first?["message"] as? [String: Any],
+                   let content = message["content"] as? String,
+                   let seasonInfoData = content.data(using: .utf8) {
+                    
+                    let decoder = JSONDecoder()
+                    let seasonInfo = try decoder.decode(SeasonInfo.self, from: seasonInfoData)
+                    completion(seasonInfo)
+                } else {
+                    print("Failed to parse response: \(String(data: data, encoding: .utf8) ?? "Invalid data")")
+                    completion(nil)
+                }
+            } catch {
+                print("JSON parsing error: \(error.localizedDescription)")
+                completion(nil)
+            }
+        }.resume()
     }
 }
 
@@ -421,7 +634,7 @@ struct PlaceRow: View {
         }
         .padding(.vertical, 1)
         .padding(.horizontal, 10)
-        .background(place.isSelected ? Color.black : Color(red: 0.95, green: 0.95, blue: 0.95))
+        .background(place.isSelected ? Color.white : Color(red: 0.95, green: 0.95, blue: 0.95))
     }
 }
 
@@ -876,13 +1089,13 @@ func fetchPlacePhoto(photoReference: String, completion: @escaping (UIImage?) ->
     }.resume()
 }
 
-func fetchTouristPlaces(at coordinate: CLLocationCoordinate2D, completion: @escaping ([Place]) -> Void) {
+func fetchTouristPlaces(at coordinate: CLLocationCoordinate2D, radius: Double, completion: @escaping ([Place]) -> Void) {
     let apiKey = "AIzaSyCLt4IgoURwoqW1DgIAUklDvHAZDJaR3bo"
     let location = "\(coordinate.latitude),\(coordinate.longitude)"
-    let radius = 2000
     let type = "tourist_attraction"
     
-    let urlString = "https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=\(location)&radius=\(radius)&type=\(type)&key=\(apiKey)"
+    let urlString = "https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=\(location)&radius=\(Int(radius * 1000))&type=\(type)&rankby=prominence&key=\(apiKey)"
+    
     print("Request URL: \(urlString)")
     
     guard let url = URL(string: urlString) else {
@@ -903,7 +1116,6 @@ func fetchTouristPlaces(at coordinate: CLLocationCoordinate2D, completion: @esca
             return
         }
         
-        // Print the raw API response for debugging
         if let jsonString = String(data: data, encoding: .utf8) {
             print("Raw API response: \(jsonString)")
         }
@@ -946,8 +1158,63 @@ func fetchTouristPlaces(at coordinate: CLLocationCoordinate2D, completion: @esca
     }.resume()
 }
 
-struct ContentView_Previews: PreviewProvider {
-    static var previews: some View {
-        ContentView()
+func fetchPublicTransportTime(from source: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D, transportType: TransportType, completion: @escaping (TimeInterval?) -> Void) {
+    let apiKey = "AIzaSyCLt4IgoURwoqW1DgIAUklDvHAZDJaR3bo"
+    let origin = "\(source.latitude),\(source.longitude)"
+    let destination = "\(destination.latitude),\(destination.longitude)"
+    let urlString = "https://maps.googleapis.com/maps/api/directions/json?origin=\(origin)&destination=\(destination)&mode=\(transportType.googleTransportType)&key=\(apiKey)"
+    
+    guard let url = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "") else {
+        completion(nil)
+        return
+    }
+    
+    URLSession.shared.dataTask(with: url) { data, response, error in
+        if let error = error {
+            print("Error fetching public transport time: \(error.localizedDescription)")
+            completion(nil)
+            return
+        }
+        
+        guard let data = data else {
+            print("No data received")
+            completion(nil)
+            return
+        }
+        
+        do {
+            let result = try JSONDecoder().decode(GoogleDirectionsResponse.self, from: data)
+            if let duration = result.routes.first?.legs.first?.duration.value {
+                print("Public transport duration: \(duration) seconds")
+                completion(TimeInterval(duration))
+            } else {
+                print("No duration found in response")
+                completion(nil)
+            }
+        } catch {
+            print("Error decoding response: \(error.localizedDescription)")
+            completion(nil)
+        }
+    }.resume()
+}
+
+struct GoogleDirectionsResponse: Codable {
+    let routes: [Route]
+    
+    struct Route: Codable {
+        let legs: [Leg]
+    }
+    
+    struct Leg: Codable {
+        let duration: Duration
+        let distance: Distance
+    }
+    
+    struct Duration: Codable {
+        let value: Int
+    }
+    
+    struct Distance: Codable {
+        let value: Int
     }
 }
